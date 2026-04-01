@@ -72,7 +72,6 @@ function useAuth() {
 
 function LoginPage() {
   const { login } = useAuth();
-  const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -83,8 +82,7 @@ function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const endpoint = isRegister ? '/auth/register' : '/auth/login';
-      const res = await axios.post(`${API}${endpoint}`, { email, password });
+      const res = await axios.post(`${API}/auth/login`, { email, password });
       login(res.data.user, res.data.token);
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao autenticar');
@@ -97,7 +95,7 @@ function LoginPage() {
     <div className="auth-page">
       <div className="auth-card">
         <h1>QR Tracker</h1>
-        <p className="auth-subtitle">{isRegister ? 'Crie sua conta' : 'Faça login'}</p>
+        <p className="auth-subtitle">Faça login para continuar</p>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>Email</label>
@@ -105,17 +103,126 @@ function LoginPage() {
           </div>
           <div className="form-group">
             <label>Senha</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder={isRegister ? 'Mínimo 6 caracteres' : 'Sua senha'} minLength={6} />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Sua senha" minLength={6} />
           </div>
           {error && <p className="error">{error}</p>}
           <button type="submit" className="btn-primary" disabled={loading}>
-            {loading ? 'Aguarde...' : isRegister ? 'Registrar' : 'Entrar'}
+            {loading ? 'Aguarde...' : 'Entrar'}
           </button>
         </form>
-        <button className="btn-link" onClick={() => { setIsRegister(!isRegister); setError(''); }}>
-          {isRegister ? 'Já tem conta? Entrar' : 'Não tem conta? Registrar'}
+      </div>
+    </div>
+  );
+}
+
+function UsersManagement() {
+  const [users, setUsers] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState('user');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const fetchUsers = async () => {
+    try {
+      const res = await axios.get(`${API}/users`);
+      setUsers(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    try {
+      await axios.post(`${API}/users`, { email: newEmail, password: newPassword, role: newRole });
+      setNewEmail('');
+      setNewPassword('');
+      setNewRole('user');
+      setShowForm(false);
+      setSuccess('Usuário criado!');
+      fetchUsers();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erro ao criar');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Excluir este usuário e todos os seus links?')) return;
+    try {
+      await axios.delete(`${API}/users/${id}`);
+      setSuccess('Usuário excluído!');
+      fetchUsers();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erro ao excluir');
+    }
+  };
+
+  const handleRoleChange = async (id, role) => {
+    try {
+      await axios.put(`${API}/users/${id}/role`, { role });
+      setSuccess('Role atualizada!');
+      fetchUsers();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erro ao atualizar');
+    }
+  };
+
+  return (
+    <div className="users-card">
+      <div className="list-header">
+        <h2>Usuários</h2>
+        <button className="btn-primary btn-sm" onClick={() => setShowForm(!showForm)}>
+          {showForm ? 'Cancelar' : '+ Novo Usuário'}
         </button>
       </div>
+      {error && <p className="error">{error}</p>}
+      {success && <p className="success">{success}</p>}
+      {showForm && (
+        <form onSubmit={handleCreate} className="user-form">
+          <input type="email" placeholder="Email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} required />
+          <input type="password" placeholder="Senha (min 6)" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={6} />
+          <select value={newRole} onChange={(e) => setNewRole(e.target.value)}>
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </select>
+          <button type="submit" className="btn-primary btn-sm">Criar</button>
+        </form>
+      )}
+      <table className="users-table">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Criado em</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {users.map((u) => (
+            <tr key={u.id}>
+              <td>{u.email}</td>
+              <td>
+                <select value={u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}>
+                  <option value="user">user</option>
+                  <option value="admin">admin</option>
+                </select>
+              </td>
+              <td>{new Date(u.created_at).toLocaleDateString('pt-BR')}</td>
+              <td>
+                <button className="btn-action btn-delete" onClick={() => handleDelete(u.id)} title="Excluir">🗑</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -178,18 +285,10 @@ function LinksList({ onView, onEdit, onDelete, onDownload }) {
                 <td><span className="badge">{link.scan_count}</span></td>
                 <td>{new Date(link.created_at).toLocaleDateString('pt-BR')}</td>
                 <td className="actions-cell">
-                  <button className="btn-action btn-view" onClick={() => onView(link)} title="Visualizar">
-                    👁
-                  </button>
-                  <button className="btn-action btn-download" onClick={() => onDownload(link)} title="Baixar PNG">
-                    ⬇️
-                  </button>
-                  <button className="btn-action btn-edit" onClick={() => onEdit(link)} title="Editar">
-                    ✏️
-                  </button>
-                  <button className="btn-action btn-delete" onClick={() => onDelete(link)} title="Excluir">
-                    🗑
-                  </button>
+                  <button className="btn-action btn-view" onClick={() => onView(link)} title="Visualizar">👁</button>
+                  <button className="btn-action btn-download" onClick={() => onDownload(link)} title="Baixar PNG">⬇️</button>
+                  <button className="btn-action btn-edit" onClick={() => onEdit(link)} title="Editar">✏️</button>
+                  <button className="btn-action btn-delete" onClick={() => onDelete(link)} title="Excluir">🗑</button>
                 </td>
               </tr>
             ))}
@@ -247,9 +346,7 @@ function LinkFormModal({ link, onSave, onClose }) {
           {error && <p className="error">{error}</p>}
           <div className="modal-actions">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="btn-primary" disabled={loading}>
-              {loading ? 'Salvando...' : link ? 'Salvar' : 'Criar'}
-            </button>
+            <button type="submit" className="btn-primary" disabled={loading}>{loading ? 'Salvando...' : link ? 'Salvar' : 'Criar'}</button>
           </div>
         </form>
       </div>
@@ -257,7 +354,7 @@ function LinkFormModal({ link, onSave, onClose }) {
   );
 }
 
-function LinkDetailsModal({ link, onClose, onBack }) {
+function LinkDetailsModal({ link, onClose }) {
   const [activeTab, setActiveTab] = useState('scans');
   const [scans, setScans] = useState([]);
   const [analytics, setAnalytics] = useState(null);
@@ -288,7 +385,7 @@ function LinkDetailsModal({ link, onClose, onBack }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-large" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <button className="btn-back" onClick={onBack}>← Voltar</button>
+          <button className="btn-back" onClick={onClose}>← Voltar</button>
           <h3>{link.company_name}</h3>
         </div>
         {loading ? (
@@ -400,6 +497,7 @@ function LinkDetailsModal({ link, onClose, onBack }) {
 
 function Dashboard() {
   const { user, logout } = useAuth();
+  const [activeSection, setActiveSection] = useState('links');
   const [showForm, setShowForm] = useState(false);
   const [editingLink, setEditingLink] = useState(null);
   const [viewingLink, setViewingLink] = useState(null);
@@ -441,26 +539,37 @@ function Dashboard() {
     <div className="dashboard">
       <header className="dash-header">
         <h1>QR Tracker</h1>
+        <nav className="dash-nav">
+          <button className={`nav-btn ${activeSection === 'links' ? 'active' : ''}`} onClick={() => setActiveSection('links')}>Links</button>
+          {user?.role === 'admin' && (
+            <button className={`nav-btn ${activeSection === 'users' ? 'active' : ''}`} onClick={() => setActiveSection('users')}>Usuários</button>
+          )}
+        </nav>
         <div className="dash-user">
-          <span>{user?.email}</span>
+          <span>{user?.email} <span className="role-badge">{user?.role}</span></span>
           <button className="btn-logout" onClick={logout}>Sair</button>
         </div>
       </header>
       <main className="dash-main">
-        <div className="dash-actions">
-          <button className="btn-primary" onClick={() => setShowForm(true)}>+ Novo Link</button>
-        </div>
-        <LinksList
-          key={refreshKey}
-          onView={setViewingLink}
-          onEdit={setEditingLink}
-          onDelete={handleDelete}
-          onDownload={handleDownload}
-        />
+        {activeSection === 'links' && (
+          <>
+            <div className="dash-actions">
+              <button className="btn-primary" onClick={() => setShowForm(true)}>+ Novo Link</button>
+            </div>
+            <LinksList
+              key={refreshKey}
+              onView={setViewingLink}
+              onEdit={setEditingLink}
+              onDelete={handleDelete}
+              onDownload={handleDownload}
+            />
+          </>
+        )}
+        {activeSection === 'users' && user?.role === 'admin' && <UsersManagement />}
       </main>
       {showForm && <LinkFormModal onSave={handleSave} onClose={() => setShowForm(false)} />}
       {editingLink && <LinkFormModal link={editingLink} onSave={handleSave} onClose={() => setEditingLink(null)} />}
-      {viewingLink && <LinkDetailsModal link={viewingLink} onClose={() => setViewingLink(null)} onBack={() => setViewingLink(null)} />}
+      {viewingLink && <LinkDetailsModal link={viewingLink} onClose={() => setViewingLink(null)} />}
     </div>
   );
 }

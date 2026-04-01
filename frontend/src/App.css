@@ -128,11 +128,50 @@ body {
   justify-content: space-between;
   align-items: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .dash-header h1 {
   font-size: 1.5rem;
   color: #1a1a2e;
+}
+
+.dash-nav {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nav-btn {
+  padding: 0.4rem 1rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #666;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.nav-btn:hover {
+  background: #f0f2f5;
+}
+
+.nav-btn.active {
+  background: #4361ee;
+  color: white;
+}
+
+.role-badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  background: #4361ee;
+  color: white;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-left: 0.3rem;
 }
 
 .dash-user {
@@ -673,7 +712,81 @@ body {
     padding: 1rem 0.5rem;
   }
 
-  .links-list {
+.users-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.users-card .list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.user-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.user-form input,
+.user-form select {
+  padding: 0.6rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.user-form input:focus,
+.user-form select:focus {
+  outline: none;
+  border-color: #4361ee;
+}
+
+.btn-sm {
+  padding: 0.4rem 1rem;
+  font-size: 0.85rem;
+}
+
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.users-table th,
+.users-table td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.users-table th {
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #333;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.users-table td select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.users-table td select:focus {
+  outline: none;
+  border-color: #4361ee;
+}
+
+.links-list {
     padding: 1rem;
   }
 

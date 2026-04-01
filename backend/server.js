@@ -24,6 +24,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
+    role TEXT DEFAULT 'user',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -62,6 +63,7 @@ const columnsToAdd = [
   { table: 'scans', column: 'is_mobile', def: 'INTEGER DEFAULT 0' },
   { table: 'scans', column: 'is_tablet', def: 'INTEGER DEFAULT 0' },
   { table: 'scans', column: 'is_desktop', def: 'INTEGER DEFAULT 0' },
+  { table: 'users', column: 'role', def: "TEXT DEFAULT 'user'" },
 ];
 
 columnsToAdd.forEach(({ table, column, def }) => {
@@ -69,6 +71,15 @@ columnsToAdd.forEach(({ table, column, def }) => {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
   } catch (e) {}
 });
+
+// Create default admin if not exists
+const adminExists = db.prepare('SELECT id FROM users WHERE role = ?').get('admin');
+if (!adminExists) {
+  const hash = bcrypt.hashSync('admin123', 10);
+  db.prepare("INSERT INTO users (email, password, role) VALUES (?, ?, ?)")
+    .run('admin@qrtracker.com', hash, 'admin');
+  console.log('Default admin created: admin@qrtracker.com / admin123');
+}
 
 function parseUA(uaString) {
   const parser = new UAParser(uaString);
@@ -92,32 +103,20 @@ function authMiddleware(req, res, next) {
     const token = header.split(' ')[1];
     const decoded = jwt.verify(token, JWT_SECRET);
     req.userId = decoded.userId;
+    req.userRole = decoded.role;
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid token' });
   }
 }
 
-// AUTH: Register
-app.post('/api/auth/register', (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password || password.length < 6) {
-    return res.status(400).json({ error: 'Email and password (min 6 chars) required' });
+function isAdmin(req, res, next) {
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(req.userId);
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
   }
-  try {
-    const hash = bcrypt.hashSync(password, 10);
-    const stmt = db.prepare('INSERT INTO users (email, password) VALUES (?, ?)');
-    stmt.run(email, hash);
-    const user = db.prepare('SELECT id, email, created_at FROM users WHERE email = ?').get(email);
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-    res.status(201).json({ user, token });
-  } catch (err) {
-    if (err.message.includes('UNIQUE')) {
-      return res.status(409).json({ error: 'Email already registered' });
-    }
-    res.status(500).json({ error: 'Registration failed' });
-  }
-});
+  next();
+}
 
 // AUTH: Login
 app.post('/api/auth/login', (req, res) => {
@@ -129,16 +128,68 @@ app.post('/api/auth/login', (req, res) => {
   if (!user || !bcrypt.compareSync(password, user.password)) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
-  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ user: { id: user.id, email: user.email, created_at: user.created_at }, token });
+  const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+  res.json({ user: { id: user.id, email: user.email, role: user.role, created_at: user.created_at }, token });
 });
 
-// TEMP: Reset admin password (remove in production)
-app.post('/api/auth/reset-admin', (req, res) => {
-  const newPass = 'admin123';
-  const hash = bcrypt.hashSync(newPass, 10);
-  db.prepare("UPDATE users SET password = ? WHERE email = 'admin@theblacklistbrsubs.com'").run(hash);
-  res.json({ message: 'Password reset to: admin123' });
+// USERS: List (admin only)
+app.get('/api/users', authMiddleware, isAdmin, (req, res) => {
+  const users = db.prepare('SELECT id, email, role, created_at FROM users ORDER BY created_at DESC').all();
+  res.json(users);
+});
+
+// USERS: Create (admin only)
+app.post('/api/users', authMiddleware, isAdmin, (req, res) => {
+  const { email, password, role } = req.body;
+  if (!email || !password || password.length < 6) {
+    return res.status(400).json({ error: 'Email and password (min 6 chars) required' });
+  }
+  try {
+    const hash = bcrypt.hashSync(password, 10);
+    const userRole = role === 'admin' ? 'admin' : 'user';
+    db.prepare('INSERT INTO users (email, password, role) VALUES (?, ?, ?)').run(email, hash, userRole);
+    const user = db.prepare('SELECT id, email, role, created_at FROM users WHERE email = ?').get(email);
+    res.status(201).json(user);
+  } catch (err) {
+    if (err.message.includes('UNIQUE')) {
+      return res.status(409).json({ error: 'Email already exists' });
+    }
+    res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// USERS: Delete (admin only)
+app.delete('/api/users/:id', authMiddleware, isAdmin, (req, res) => {
+  const target = db.prepare('SELECT id, role FROM users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.role === 'admin') {
+    const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get();
+    if (adminCount.count <= 1) {
+      return res.status(400).json({ error: 'Cannot delete the last admin' });
+    }
+  }
+  db.prepare('DELETE FROM scans WHERE link_id IN (SELECT id FROM links WHERE user_id = ?)').run(req.params.id);
+  db.prepare('DELETE FROM links WHERE user_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  res.json({ message: 'User deleted' });
+});
+
+// USERS: Change role (admin only)
+app.put('/api/users/:id/role', authMiddleware, isAdmin, (req, res) => {
+  const { role } = req.body;
+  if (!['admin', 'user'].includes(role)) {
+    return res.status(400).json({ error: 'Role must be admin or user' });
+  }
+  const target = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (role === 'user') {
+    const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get();
+    if (adminCount.count <= 1 && target.id === req.userId) {
+      return res.status(400).json({ error: 'Cannot demote the last admin' });
+    }
+  }
+  db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, req.params.id);
+  res.json({ message: 'Role updated' });
 });
 
 // LINKS: Create
