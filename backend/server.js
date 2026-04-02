@@ -22,6 +22,7 @@ const db = new Database(path.join(dbDir, 'qr-tracker.db'));
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
     email TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
     role TEXT DEFAULT 'user',
@@ -64,6 +65,7 @@ const columnsToAdd = [
   { table: 'scans', column: 'is_tablet', def: 'INTEGER DEFAULT 0' },
   { table: 'scans', column: 'is_desktop', def: 'INTEGER DEFAULT 0' },
   { table: 'users', column: 'role', def: "TEXT DEFAULT 'user'" },
+  { table: 'users', column: 'name', def: 'TEXT' },
 ];
 
 columnsToAdd.forEach(({ table, column, def }) => {
@@ -129,12 +131,12 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
   const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ user: { id: user.id, email: user.email, role: user.role, created_at: user.created_at }, token });
+  res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role, created_at: user.created_at }, token });
 });
 
 // USERS: List (admin only)
 app.get('/api/users', authMiddleware, isAdmin, (req, res) => {
-  const users = db.prepare('SELECT id, email, role, created_at FROM users ORDER BY created_at DESC').all();
+  const users = db.prepare('SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC').all();
   res.json(users);
 });
 
@@ -147,8 +149,9 @@ app.post('/api/users', authMiddleware, isAdmin, (req, res) => {
   try {
     const hash = bcrypt.hashSync(password, 10);
     const userRole = role === 'admin' ? 'admin' : 'user';
-    db.prepare('INSERT INTO users (email, password, role) VALUES (?, ?, ?)').run(email, hash, userRole);
-    const user = db.prepare('SELECT id, email, role, created_at FROM users WHERE email = ?').get(email);
+    const userName = req.body.name || email.split('@')[0];
+    db.prepare('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)').run(userName, email, hash, userRole);
+    const user = db.prepare('SELECT id, name, email, role, created_at FROM users WHERE email = ?').get(email);
     res.status(201).json(user);
   } catch (err) {
     if (err.message.includes('UNIQUE')) {
@@ -192,6 +195,17 @@ app.put('/api/users/:id/role', authMiddleware, isAdmin, (req, res) => {
   res.json({ message: 'Role updated' });
 });
 
+// USERS: Reset password (admin only)
+app.put('/api/users/:id/password', authMiddleware, isAdmin, (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+  const hash = bcrypt.hashSync(password, 10);
+  db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hash, req.params.id);
+  res.json({ message: 'Password updated' });
+});
+
 // LINKS: Create
 app.post('/api/links', authMiddleware, (req, res) => {
   const { company_name, destination_url } = req.body;
@@ -214,30 +228,52 @@ app.get('/api/links', authMiddleware, (req, res) => {
   const offset = (parseInt(page) - 1) * parseInt(limit);
   const searchTerm = search ? `%${search}%` : '%';
 
-  const total = db.prepare(
-    'SELECT COUNT(*) as count FROM links WHERE user_id = ? AND (company_name LIKE ? OR destination_url LIKE ?)'
-  ).get(req.userId, searchTerm, searchTerm);
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(req.userId);
+  const isAdmin = user?.role === 'admin';
 
-  const links = db.prepare(`
-    SELECT * FROM links
-    WHERE user_id = ? AND (company_name LIKE ? OR destination_url LIKE ?)
-    ORDER BY created_at DESC
-    LIMIT ? OFFSET ?
-  `).all(req.userId, searchTerm, searchTerm, parseInt(limit), offset);
+  let total, links;
+  if (isAdmin) {
+    total = db.prepare(
+      'SELECT COUNT(*) as count FROM links WHERE company_name LIKE ? OR destination_url LIKE ?'
+    ).get(searchTerm, searchTerm);
+    links = db.prepare(`
+      SELECT l.*, u.email as owner_email FROM links l
+      LEFT JOIN users u ON l.user_id = u.id
+      WHERE l.company_name LIKE ? OR l.destination_url LIKE ?
+      ORDER BY l.created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(searchTerm, searchTerm, parseInt(limit), offset);
+  } else {
+    total = db.prepare(
+      'SELECT COUNT(*) as count FROM links WHERE user_id = ? AND (company_name LIKE ? OR destination_url LIKE ?)'
+    ).get(req.userId, searchTerm, searchTerm);
+    links = db.prepare(`
+      SELECT * FROM links
+      WHERE user_id = ? AND (company_name LIKE ? OR destination_url LIKE ?)
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(req.userId, searchTerm, searchTerm, parseInt(limit), offset);
+  }
 
   res.json({ links, total: total.count, page: parseInt(page), limit: parseInt(limit) });
 });
 
 // LINKS: Get single
 app.get('/api/links/:id', authMiddleware, (req, res) => {
-  const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(req.userId);
+  const link = user?.role === 'admin'
+    ? db.prepare('SELECT * FROM links WHERE id = ?').get(req.params.id)
+    : db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: 'Link not found' });
   res.json(link);
 });
 
 // LINKS: Update
 app.put('/api/links/:id', authMiddleware, (req, res) => {
-  const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(req.userId);
+  const link = user?.role === 'admin'
+    ? db.prepare('SELECT * FROM links WHERE id = ?').get(req.params.id)
+    : db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: 'Link not found' });
 
   const { company_name, destination_url } = req.body;
@@ -255,7 +291,10 @@ app.put('/api/links/:id', authMiddleware, (req, res) => {
 
 // LINKS: Delete
 app.delete('/api/links/:id', authMiddleware, (req, res) => {
-  const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(req.userId);
+  const link = user?.role === 'admin'
+    ? db.prepare('SELECT * FROM links WHERE id = ?').get(req.params.id)
+    : db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: 'Link not found' });
   db.prepare('DELETE FROM scans WHERE link_id = ?').run(req.params.id);
   db.prepare('DELETE FROM links WHERE id = ?').run(req.params.id);
@@ -264,7 +303,10 @@ app.delete('/api/links/:id', authMiddleware, (req, res) => {
 
 // QR Code
 app.get('/api/qr/:id', authMiddleware, async (req, res) => {
-  const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(req.userId);
+  const link = user?.role === 'admin'
+    ? db.prepare('SELECT * FROM links WHERE id = ?').get(req.params.id)
+    : db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: 'Link not found' });
 
   const baseUrl = process.env.BASE_URL || `http://localhost:3001`;
@@ -280,7 +322,10 @@ app.get('/api/qr/:id', authMiddleware, async (req, res) => {
 
 // QR Code PNG download
 app.get('/api/qr/:id/png', authMiddleware, async (req, res) => {
-  const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(req.userId);
+  const link = user?.role === 'admin'
+    ? db.prepare('SELECT * FROM links WHERE id = ?').get(req.params.id)
+    : db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: 'Link not found' });
 
   const baseUrl = process.env.BASE_URL || `http://localhost:3001`;
@@ -313,7 +358,10 @@ app.get('/s/:shortCode', (req, res) => {
 
 // Scans history
 app.get('/api/links/:id/scans', authMiddleware, (req, res) => {
-  const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(req.userId);
+  const link = user?.role === 'admin'
+    ? db.prepare('SELECT * FROM links WHERE id = ?').get(req.params.id)
+    : db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: 'Link not found' });
 
   const scans = db.prepare(
@@ -325,7 +373,10 @@ app.get('/api/links/:id/scans', authMiddleware, (req, res) => {
 
 // Analytics
 app.get('/api/links/:id/analytics', authMiddleware, (req, res) => {
-  const link = db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(req.userId);
+  const link = user?.role === 'admin'
+    ? db.prepare('SELECT * FROM links WHERE id = ?').get(req.params.id)
+    : db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: 'Link not found' });
 
   const scansByOS = db.prepare(
