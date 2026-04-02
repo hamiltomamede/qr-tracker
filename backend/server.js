@@ -328,7 +328,9 @@ app.get('/api/qr/:id', authMiddleware, async (req, res) => {
     : db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: 'Link not found' });
 
-  const baseUrl = process.env.BASE_URL || `http://localhost:3001`;
+  const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const baseUrl = process.env.BASE_URL || `${protocol}://${host}`;
   const scanUrl = `${baseUrl}/s/${link.short_code}`;
 
   try {
@@ -347,7 +349,9 @@ app.get('/api/qr/:id/png', authMiddleware, async (req, res) => {
     : db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: 'Link not found' });
 
-  const baseUrl = process.env.BASE_URL || `http://localhost:3001`;
+  const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const baseUrl = process.env.BASE_URL || `${protocol}://${host}`;
   const scanUrl = `${baseUrl}/s/${link.short_code}`;
 
   try {
