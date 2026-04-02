@@ -216,13 +216,16 @@ function UsersManagement() {
     catch (err) { setError(err.response?.data?.error || 'Erro ao atualizar'); }
   };
 
-  const handleResetPassword = async (e) => {
+  const handleEditUser = async (e) => {
     e.preventDefault();
-    if (!newPassword || newPassword.length < 6) { setError('Senha deve ter no mínimo 6 caracteres'); return; }
+    setError('');
     try {
-      await axios.put(`${API}/users/${editingUser.id}/password`, { password: newPassword });
-      setNewPassword(''); setEditingUser(null); setSuccess('Senha alterada!');
-    } catch (err) { setError(err.response?.data?.error || 'Erro ao alterar senha'); }
+      await axios.put(`${API}/users/${editingUser.id}`, { name: newName, role: newRole });
+      if (newPassword && newPassword.length >= 6) {
+        await axios.put(`${API}/users/${editingUser.id}/password`, { password: newPassword });
+      }
+      setNewName(''); setNewPassword(''); setEditingUser(null); setSuccess('Usuário atualizado!'); fetchUsers();
+    } catch (err) { setError(err.response?.data?.error || 'Erro ao atualizar'); }
   };
 
   return (
@@ -257,8 +260,7 @@ function UsersManagement() {
                 </td>
                 <td className="px-6 py-4">{new Date(u.created_at).toLocaleDateString('pt-BR')}</td>
                 <td className="px-6 py-4 flex gap-2">
-                  <button onClick={() => { setEditingUser(u); setNewPassword(''); setError(''); }} className="text-yellow-600 hover:text-yellow-900 dark:hover:text-yellow-400" title="Senha">🔑</button>
-                  <button onClick={() => { setEditingUser(u); setNewRole(u.role === 'admin' ? 'user' : 'admin'); }} className="text-green-600 hover:text-green-900 dark:hover:text-green-400" title="Role">🔄</button>
+                  <button onClick={() => { setEditingUser(u); setNewName(u.name || ''); setNewRole(u.role); setNewPassword(''); setError(''); }} className="text-blue-600 hover:text-blue-900 dark:hover:text-blue-400" title="Editar">✏️</button>
                   <button onClick={() => handleDelete(u.id)} className="text-red-600 hover:text-red-900 dark:hover:text-red-400" title="Excluir">🗑</button>
                 </td>
               </tr>
@@ -306,27 +308,37 @@ function UsersManagement() {
       {editingUser && (
         <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4" onClick={() => setEditingUser(null)}>
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">{editingUser.email}</h3>
-            <form onSubmit={handleResetPassword} className="space-y-4">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Editar Usuário</h3>
+            <form onSubmit={handleEditUser} className="space-y-4">
+              <div>
+                <label className="block mb-1 text-sm font-medium text-gray-900 dark:text-white">Nome</label>
+                <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nome do usuário"
+                  className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" />
+              </div>
+              <div>
+                <label className="block mb-1 text-sm font-medium text-gray-900 dark:text-white">Email</label>
+                <input type="email" value={editingUser.email} disabled
+                  className="bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 rounded-lg block w-full p-2.5 cursor-not-allowed" />
+              </div>
               <div>
                 <label className="block mb-1 text-sm font-medium text-gray-900 dark:text-white">Nova Senha</label>
-                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={6} placeholder="Mínimo 6 caracteres"
+                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={6} placeholder="Deixe vazio para não alterar"
                   className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" />
+              </div>
+              <div>
+                <label className="block mb-1 text-sm font-medium text-gray-900 dark:text-white">Role</label>
+                <select value={newRole} onChange={(e) => setNewRole(e.target.value)}
+                  className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                  <option value="user">user</option>
+                  <option value="admin">admin</option>
+                </select>
               </div>
               {error && <p className="text-sm text-red-600">{error}</p>}
               <div className="flex gap-3 justify-end">
                 <button type="button" onClick={() => setEditingUser(null)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300">Cancelar</button>
-                <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">Alterar Senha</button>
+                <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">Salvar</button>
               </div>
             </form>
-            <div className="mt-4">
-              <label className="block mb-1 text-sm font-medium text-gray-900 dark:text-white">Role</label>
-              <select value={newRole} onChange={(e) => handleRoleChange(editingUser.id, e.target.value)}
-                className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
-                <option value="user">user</option>
-                <option value="admin">admin</option>
-              </select>
-            </div>
           </div>
         </div>
       )}

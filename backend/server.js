@@ -195,6 +195,25 @@ app.put('/api/users/:id/role', authMiddleware, isAdmin, (req, res) => {
   res.json({ message: 'Role updated' });
 });
 
+// USERS: Update (admin only)
+app.put('/api/users/:id', authMiddleware, isAdmin, (req, res) => {
+  const { name, role } = req.body;
+  const target = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (role && !['admin', 'user'].includes(role)) {
+    return res.status(400).json({ error: 'Role must be admin or user' });
+  }
+  if (role === 'user') {
+    const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get();
+    if (adminCount.count <= 1 && target.id === req.userId) {
+      return res.status(400).json({ error: 'Cannot demote the last admin' });
+    }
+  }
+  db.prepare('UPDATE users SET name = COALESCE(?, name), role = COALESCE(?, role) WHERE id = ?')
+    .run(name || null, role || null, req.params.id);
+  res.json({ message: 'User updated' });
+});
+
 // USERS: Reset password (admin only)
 app.put('/api/users/:id/password', authMiddleware, isAdmin, (req, res) => {
   const { password } = req.body;

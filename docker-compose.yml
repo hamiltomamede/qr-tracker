@@ -8,7 +8,7 @@ services:
       - BASE_URL=http://localhost:3001
       - DB_PATH=/data
     volumes:
-      - db-data:/data
+      - tracker-data:/data
     restart: unless-stopped
 
   frontend:
@@ -18,19 +18,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=traefik-public
-      - traefik.http.routers.tracker.rule=Host(`tracker.hmtech.net.br`)
-      - traefik.http.routers.tracker.entrypoints=websecure
-      - traefik.http.routers.tracker.tls.certresolver=letsencryptresolver
-      - traefik.http.services.tracker.loadbalancer.server.port=80
-    networks:
-      - traefik-public
 
 volumes:
-  db-data:
-
-networks:
-  traefik-public:
-    external: true
+  tracker-data:
