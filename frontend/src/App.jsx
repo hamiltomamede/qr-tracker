@@ -78,6 +78,9 @@ function Sidebar({ activeSection, setActiveSection }) {
     { id: 'links', label: 'Links', icon: (
       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.243 3.03a1 1 0 01.727 1.213L9.53 6h2.94l.56-2.243a1 1 0 111.94.486L14.53 6H16a1 1 0 110 2h-1.47l-.56 2.243a1 1 0 11-1.94-.486L12.47 8H9.53l-.56 2.243a1 1 0 11-1.94-.486L7.47 8H6a1 1 0 010-2h1.47l.56-2.243a1 1 0 011.213-.727zM4.5 11a1 1 0 011 1v1.07l3.5 3.5V14a1 1 0 112 0v3.586l2.207-2.207a1 1 0 011.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4A1 1 0 014.5 14v-2a1 1 0 011-1z" /></svg>
     )},
+    { id: 'whatsapp', label: 'WhatsApp', icon: (
+      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L0 24l6.342-1.652c1.852.948 3.952 1.431 6.115 1.461h.001a11.816 11.816 0 0010.941-5.947c-.002-6.462-5.238-11.89-10.941-11.878z"/></svg>
+    )},
     { id: 'users', label: 'Usuários', icon: (
       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" /></svg>
     )},
@@ -629,6 +632,65 @@ function LinkDetailsModal({ link, onClose }) {
   );
 }
 
+function WhatsAppGenerator() {
+  const [phone, setPhone] = useState('');
+  const [message, setMessage] = useState('');
+  const [generatedLink, setGeneratedLink] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const generateLink = () => {
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (!cleanPhone) return;
+    const waLink = message 
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/${cleanPhone}`;
+    setGeneratedLink(waLink);
+    setCopied(false);
+  };
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(generatedLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  return (
+    <div className="p-4 lg:p-6">
+      <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Gerador de Link WhatsApp</h2>
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 max-w-lg">
+        <div className="space-y-4">
+          <div>
+            <label className="block mb-1 text-sm font-medium text-gray-900 dark:text-white">Número do WhatsApp</label>
+            <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="5511999999999"
+              className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" />
+          </div>
+          <div>
+            <label className="block mb-1 text-sm font-medium text-gray-900 dark:text-white">Mensagem (opcional)</label>
+            <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} placeholder="Olá, tudo bem?"
+              className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" />
+          </div>
+          <button type="button" onClick={generateLink} className="w-full text-white bg-green-600 hover:bg-green-700 font-medium rounded-lg text-sm px-4 py-2.5">
+            Gerar Link
+          </button>
+          {generatedLink && (
+            <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Link gerado:</p>
+              <p className="text-sm text-gray-900 dark:text-white break-all font-mono">{generatedLink}</p>
+              <button type="button" onClick={copyLink} className="mt-3 w-full text-white bg-blue-600 hover:bg-blue-700 font-medium rounded-lg text-sm px-4 py-2">
+                {copied ? 'Copiado!' : 'Copiar Link'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard() {
   const { user, logout, setSidebarOpen } = useAuth();
   const [activeSection, setActiveSection] = useState('links');
@@ -683,6 +745,7 @@ function Dashboard() {
               <LinksList key={refreshKey} onView={setViewingLink} onEdit={setEditingLink} onDelete={handleDelete} onDownload={handleDownload} isAdmin={user?.role === 'admin'} />
             </>
           )}
+          {activeSection === 'whatsapp' && <WhatsAppGenerator />}
           {activeSection === 'users' && user?.role === 'admin' && <UsersManagement />}
         </main>
       </div>

@@ -34,6 +34,7 @@ db.exec(`
     user_id INTEGER NOT NULL,
     company_name TEXT NOT NULL,
     destination_url TEXT NOT NULL,
+    link_type TEXT DEFAULT 'url',
     short_code TEXT UNIQUE NOT NULL,
     scan_count INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -58,6 +59,7 @@ db.exec(`
 
 const columnsToAdd = [
   { table: 'links', column: 'user_id', def: 'INTEGER' },
+  { table: 'links', column: 'link_type', def: "TEXT DEFAULT 'url'" },
   { table: 'scans', column: 'device', def: 'TEXT' },
   { table: 'scans', column: 'browser', def: 'TEXT' },
   { table: 'scans', column: 'os', def: 'TEXT' },
@@ -227,16 +229,17 @@ app.put('/api/users/:id/password', authMiddleware, isAdmin, (req, res) => {
 
 // LINKS: Create
 app.post('/api/links', authMiddleware, (req, res) => {
-  const { company_name, destination_url } = req.body;
+  const { company_name, destination_url, link_type } = req.body;
   if (!company_name || !destination_url) {
     return res.status(400).json({ error: 'company_name and destination_url are required' });
   }
+  const type = link_type === 'whatsapp' ? 'whatsapp' : 'url';
   const id = nanoid(10);
   const shortCode = nanoid(8);
   const stmt = db.prepare(
-    'INSERT INTO links (id, user_id, company_name, destination_url, short_code) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO links (id, user_id, company_name, destination_url, link_type, short_code) VALUES (?, ?, ?, ?, ?, ?)'
   );
-  stmt.run(id, req.userId, company_name, destination_url, shortCode);
+  stmt.run(id, req.userId, company_name, destination_url, type, shortCode);
   const link = db.prepare('SELECT * FROM links WHERE id = ?').get(id);
   res.status(201).json(link);
 });
@@ -295,14 +298,15 @@ app.put('/api/links/:id', authMiddleware, (req, res) => {
     : db.prepare('SELECT * FROM links WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!link) return res.status(404).json({ error: 'Link not found' });
 
-  const { company_name, destination_url } = req.body;
+  const { company_name, destination_url, link_type } = req.body;
   if (!company_name || !destination_url) {
     return res.status(400).json({ error: 'company_name and destination_url are required' });
   }
+  const type = link_type === 'whatsapp' ? 'whatsapp' : 'url';
 
   db.prepare(
-    'UPDATE links SET company_name = ?, destination_url = ? WHERE id = ?'
-  ).run(company_name, destination_url, req.params.id);
+    'UPDATE links SET company_name = ?, destination_url = ?, link_type = ? WHERE id = ?'
+  ).run(company_name, destination_url, type, req.params.id);
 
   const updated = db.prepare('SELECT * FROM links WHERE id = ?').get(req.params.id);
   res.json(updated);
@@ -364,10 +368,28 @@ app.get('/api/qr/:id/png', authMiddleware, async (req, res) => {
   }
 });
 
+function convertToWhatsAppUrl(url) {
+  if (!url) return url;
+  const waMatch = url.match(/wa\.me\/(\d+)/);
+  if (waMatch) return url;
+  const apiMatch = url.match(/api\.whatsapp\.com\/send\?phone=(\d+)/);
+  if (apiMatch) return `https://wa.me/${apiMatch[1]}`;
+  const directMatch = url.match(/^https?:\/\/(chat\.whatsapp\.com\/\w+)/);
+  if (directMatch) return `https://${directMatch[1]}`;
+  const phoneMatch = url.match(/^(\d{10,})$/);
+  if (phoneMatch) return `https://wa.me/${phoneMatch[1]}?text=`;
+  return url;
+}
+
 // SCAN redirect
 app.get('/s/:shortCode', (req, res) => {
   const link = db.prepare('SELECT * FROM links WHERE short_code = ?').get(req.params.shortCode);
   if (!link) return res.status(404).send('Link not found');
+
+  let destination = link.destination_url;
+  if (link.link_type === 'whatsapp') {
+    destination = convertToWhatsAppUrl(destination);
+  }
 
   const ua = parseUA(req.headers['user-agent'] || '');
   db.prepare(`
@@ -376,7 +398,7 @@ app.get('/s/:shortCode', (req, res) => {
   `).run(link.id, req.headers['user-agent'] || '', req.ip || '', ua.device, ua.browser, ua.os, ua.is_mobile, ua.is_tablet, ua.is_desktop);
 
   db.prepare('UPDATE links SET scan_count = scan_count + 1 WHERE id = ?').run(link.id);
-  res.redirect(302, link.destination_url);
+  res.redirect(302, destination);
 });
 
 // Scans history
