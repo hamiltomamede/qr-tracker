@@ -108,6 +108,10 @@ function parseUA(uaString) {
 }
 
 function getRealIP(req) {
+  const realIP = req.headers['x-real-ip'];
+  if (realIP) {
+    return realIP;
+  }
   const forwarded = req.headers['x-forwarded-for'];
   if (forwarded) {
     const ips = forwarded.split(',').map(ip => ip.trim());
@@ -133,10 +137,8 @@ async function getGeoLocation(ip) {
     return geoCache.get(ip);
   }
   try {
-    console.log('Fetching geo for IP:', ip);
     const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city,isp,query`);
     const data = await res.json();
-    console.log('Geo response:', data);
     const geo = data.status === 'success' ? {
       country: data.country || null,
       region: data.regionName || null,
@@ -146,7 +148,6 @@ async function getGeoLocation(ip) {
     geoCache.set(ip, geo);
     return geo;
   } catch (err) {
-    console.error('Geo error:', err);
     return { country: null, region: null, city: null, isp: null };
   }
 }
@@ -447,6 +448,14 @@ app.get('/s/:shortCode', async (req, res) => {
   const ua = parseUA(req.headers['user-agent'] || '');
   const ip = getRealIP(req);
   const geo = await getGeoLocation(ip);
+
+  console.log('Headers:', JSON.stringify({
+    'x-forwarded-for': req.headers['x-forwarded-for'],
+    'x-real-ip': req.headers['x-real-ip'],
+    'host': req.headers.host
+  }));
+  console.log('IP resolved:', ip);
+  console.log('Geo:', geo);
 
   db.prepare(`
     INSERT INTO scans (link_id, user_agent, ip, country, region, city, isp, device, browser, os, is_mobile, is_tablet, is_desktop)
