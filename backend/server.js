@@ -126,15 +126,17 @@ function getRealIP(req) {
 
 let geoCache = new Map();
 async function getGeoLocation(ip) {
-  if (!ip || ip === '127.0.0.1' || ip.startsWith('10.') || ip.startsWith('192.168.') || ip.startsWith('172.')) {
+  if (!ip || ip === '127.0.0.1') {
     return { country: null, region: null, city: null, isp: null };
   }
   if (geoCache.has(ip)) {
     return geoCache.get(ip);
   }
   try {
+    console.log('Fetching geo for IP:', ip);
     const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city,isp,query`);
     const data = await res.json();
+    console.log('Geo response:', data);
     const geo = data.status === 'success' ? {
       country: data.country || null,
       region: data.regionName || null,
@@ -144,6 +146,7 @@ async function getGeoLocation(ip) {
     geoCache.set(ip, geo);
     return geo;
   } catch (err) {
+    console.error('Geo error:', err);
     return { country: null, region: null, city: null, isp: null };
   }
 }

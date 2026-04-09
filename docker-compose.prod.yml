@@ -15,6 +15,9 @@ services:
       - traefik.http.routers.tracker-api.entrypoints=websecure
       - traefik.http.routers.tracker-api.tls.certresolver=letsencryptresolver
       - traefik.http.services.tracker-api.loadbalancer.server.port=3001
+      - traefik.http.middlewares.tracker-headers.headers.customrequestheaders.X-Real-IP=
+      - traefik.http.middlewares.tracker-headers.headers.customrequestheaders.X-Forwarded-For=
+      - traefik.http.routers.tracker-api.middlewares=tracker-headers
 
   frontend:
     build: ./frontend
