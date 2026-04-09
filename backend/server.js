@@ -13,6 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JWT_SECRET = process.env.JWT_SECRET || 'qr-tracker-secret-key-change-in-production';
 
 const app = express();
+app.set('trust proxy', true);
 app.use(cors());
 app.use(express.json());
 
@@ -47,6 +48,10 @@ db.exec(`
     scanned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     user_agent TEXT,
     ip TEXT,
+    country TEXT,
+    region TEXT,
+    city TEXT,
+    isp TEXT,
     device TEXT,
     browser TEXT,
     os TEXT,
@@ -66,6 +71,10 @@ const columnsToAdd = [
   { table: 'scans', column: 'is_mobile', def: 'INTEGER DEFAULT 0' },
   { table: 'scans', column: 'is_tablet', def: 'INTEGER DEFAULT 0' },
   { table: 'scans', column: 'is_desktop', def: 'INTEGER DEFAULT 0' },
+  { table: 'scans', column: 'country', def: 'TEXT' },
+  { table: 'scans', column: 'region', def: 'TEXT' },
+  { table: 'scans', column: 'city', def: 'TEXT' },
+  { table: 'scans', column: 'isp', def: 'TEXT' },
   { table: 'users', column: 'role', def: "TEXT DEFAULT 'user'" },
   { table: 'users', column: 'name', def: 'TEXT' },
 ];
@@ -96,6 +105,47 @@ function parseUA(uaString) {
     is_tablet: result.device.type === 'tablet' ? 1 : 0,
     is_desktop: !result.device.type || result.device.type === 'desktop' ? 1 : 0,
   };
+}
+
+function getRealIP(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    const ips = forwarded.split(',').map(ip => ip.trim());
+    let ip = ips[0];
+    if (ip.startsWith('::ffff:')) {
+      ip = ip.substring(7);
+    }
+    return ip;
+  }
+  let ip = req.ip || req.socket?.remoteAddress || '';
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.substring(7);
+  }
+  return ip;
+}
+
+let geoCache = new Map();
+async function getGeoLocation(ip) {
+  if (!ip || ip === '127.0.0.1' || ip.startsWith('10.') || ip.startsWith('192.168.') || ip.startsWith('172.')) {
+    return { country: null, region: null, city: null, isp: null };
+  }
+  if (geoCache.has(ip)) {
+    return geoCache.get(ip);
+  }
+  try {
+    const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city,isp,query`);
+    const data = await res.json();
+    const geo = data.status === 'success' ? {
+      country: data.country || null,
+      region: data.regionName || null,
+      city: data.city || null,
+      isp: data.isp || null
+    } : { country: null, region: null, city: null, isp: null };
+    geoCache.set(ip, geo);
+    return geo;
+  } catch (err) {
+    return { country: null, region: null, city: null, isp: null };
+  }
 }
 
 function authMiddleware(req, res, next) {
@@ -382,7 +432,7 @@ function convertToWhatsAppUrl(url) {
 }
 
 // SCAN redirect
-app.get('/s/:shortCode', (req, res) => {
+app.get('/s/:shortCode', async (req, res) => {
   const link = db.prepare('SELECT * FROM links WHERE short_code = ?').get(req.params.shortCode);
   if (!link) return res.status(404).send('Link not found');
 
@@ -392,10 +442,17 @@ app.get('/s/:shortCode', (req, res) => {
   }
 
   const ua = parseUA(req.headers['user-agent'] || '');
+  const ip = getRealIP(req);
+  const geo = await getGeoLocation(ip);
+
   db.prepare(`
-    INSERT INTO scans (link_id, user_agent, ip, device, browser, os, is_mobile, is_tablet, is_desktop)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(link.id, req.headers['user-agent'] || '', req.ip || '', ua.device, ua.browser, ua.os, ua.is_mobile, ua.is_tablet, ua.is_desktop);
+    INSERT INTO scans (link_id, user_agent, ip, country, region, city, isp, device, browser, os, is_mobile, is_tablet, is_desktop)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    link.id, req.headers['user-agent'] || '', ip,
+    geo.country, geo.region, geo.city, geo.isp,
+    ua.device, ua.browser, ua.os, ua.is_mobile, ua.is_tablet, ua.is_desktop
+  );
 
   db.prepare('UPDATE links SET scan_count = scan_count + 1 WHERE id = ?').run(link.id);
   res.redirect(302, destination);

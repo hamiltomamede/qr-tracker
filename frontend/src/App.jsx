@@ -555,9 +555,9 @@ function LinkDetailsModal({ link, onClose }) {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
                     <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
-                      <tr><th className="px-4 py-2">#</th><th className="px-4 py-2">Data/Hora</th><th className="px-4 py-2">Device</th><th className="px-4 py-2">Browser</th><th className="px-4 py-2">SO</th><th className="px-4 py-2">IP</th></tr>
+                      <tr><th className="px-4 py-2">#</th><th className="px-4 py-2">Data/Hora</th><th className="px-4 py-2">Device</th><th className="px-4 py-2">Browser</th><th className="px-4 py-2">SO</th><th className="px-4 py-2">Localização</th><th className="px-4 py-2">IP</th></tr>
                     </thead>
-                    <tbody>
+                      <tbody>
                       {scans.map((s) => (
                         <tr key={s.id} className="border-b dark:border-gray-700">
                           <td className="px-4 py-2">{s.id}</td>
@@ -565,7 +565,8 @@ function LinkDetailsModal({ link, onClose }) {
                           <td className="px-4 py-2"><span className={`px-2 py-0.5 text-xs rounded-full ${s.is_mobile ? 'bg-green-100 text-green-800' : s.is_tablet ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'}`}>{s.is_mobile ? 'Mobile' : s.is_tablet ? 'Tablet' : 'Desktop'}</span></td>
                           <td className="px-4 py-2">{s.browser || '-'}</td>
                           <td className="px-4 py-2">{s.os || '-'}</td>
-                          <td className="px-4 py-2">{s.ip || '-'}</td>
+                          <td className="px-4 py-2 text-xs">{[s.city, s.region, s.country].filter(Boolean).join(', ') || '-'}</td>
+                          <td className="px-4 py-2 font-mono text-xs">{s.ip || '-'}</td>
                         </tr>
                       ))}
                     </tbody>
