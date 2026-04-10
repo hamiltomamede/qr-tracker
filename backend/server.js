@@ -389,7 +389,7 @@ app.get('/api/qr/:id', authMiddleware, async (req, res) => {
   const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
   const host = req.headers['x-forwarded-host'] || req.headers.host;
   const baseUrl = process.env.BASE_URL || `${protocol}://${host}`;
-  const scanUrl = `${baseUrl}/s/${link.short_code}`;
+  const scanUrl = `${baseUrl}/r/${link.short_code}`;
 
   try {
     const qrDataUrl = await QRCode.toDataURL(scanUrl, { width: 300, margin: 2 });
@@ -435,7 +435,7 @@ function convertToWhatsAppUrl(url) {
   return url;
 }
 
-// SCAN redirect - IP passed from frontend
+// SCAN redirect with IP capture via JavaScript
 app.get('/s/:shortCode', async (req, res) => {
   const link = db.prepare('SELECT * FROM links WHERE short_code = ?').get(req.params.shortCode);
   if (!link) return res.status(404).send('Link not found');
@@ -445,11 +445,10 @@ app.get('/s/:shortCode', async (req, res) => {
     destination = convertToWhatsAppUrl(destination);
   }
 
-  // Get IP from header set by frontend
+  // Get IP from header (set by frontend) or fallback
   const ip = req.headers['x-client-ip'] || req.ip || '';
   
   const geo = await getGeoLocation(ip);
-
   const ua = parseUA(req.headers['user-agent'] || '');
 
   db.prepare(`
@@ -463,6 +462,70 @@ app.get('/s/:shortCode', async (req, res) => {
 
   db.prepare('UPDATE links SET scan_count = scan_count + 1 WHERE id = ?').run(link.id);
   res.redirect(302, destination);
+});
+
+// Track click with IP (called from frontend JS)
+app.post('/api/track/:shortCode', async (req, res) => {
+  const link = db.prepare('SELECT * FROM links WHERE short_code = ?').get(req.params.shortCode);
+  if (!link) return res.status(404).json({ error: 'Link not found' });
+
+  const { ip } = req.body;
+  const geo = await getGeoLocation(ip);
+  const ua = parseUA(req.headers['user-agent'] || '');
+
+  db.prepare(`
+    INSERT INTO scans (link_id, user_agent, ip, country, region, city, isp, device, browser, os, is_mobile, is_tablet, is_desktop)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    link.id, req.headers['user-agent'] || '', ip,
+    geo.country, geo.region, geo.city, geo.isp,
+    ua.device, ua.browser, ua.os, ua.is_mobile, ua.is_tablet, ua.is_desktop
+  );
+
+  db.prepare('UPDATE links SET scan_count = scan_count + 1 WHERE id = ?').run(link.id);
+  res.json({ success: true });
+});
+
+// Redirect page with JavaScript IP tracking
+app.get('/r/:shortCode', async (req, res) => {
+  const link = db.prepare('SELECT * FROM links WHERE short_code = ?').get(req.params.shortCode);
+  if (!link) return res.status(404).send('Link not found');
+
+  const destination = link.link_type === 'whatsapp' 
+    ? convertToWhatsAppUrl(link.destination_url) 
+    : link.destination_url;
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Redirecting...</title>
+  <script>
+    fetch('https://api.ipify.org?format=json')
+      .then(r => r.json())
+      .then(data => {
+        fetch('/api/track/${link.short_code}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ip: data.ip })
+        }).finally(() => {
+          window.location.href = '${destination}';
+        });
+      })
+      .catch(() => {
+        window.location.href = '${destination}';
+      });
+  </script>
+</head>
+<body>
+  <p>Redirecting...</p>
+</body>
+</html>
+  `;
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
 });
 
 // Get client IP from external service
