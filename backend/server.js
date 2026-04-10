@@ -445,8 +445,11 @@ app.get('/s/:shortCode', async (req, res) => {
     destination = convertToWhatsAppUrl(destination);
   }
 
-  // Get IP from header set by frontend
-  const ip = req.headers['x-client-ip'] || req.ip || '';
+  // Get IP - try header from frontend (set by ipify), then fallback to req.ip
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() 
+    || req.headers['x-real-ip']
+    || req.ip
+    || '';
   
   const geo = await getGeoLocation(ip);
 
@@ -465,10 +468,15 @@ app.get('/s/:shortCode', async (req, res) => {
   res.redirect(302, destination);
 });
 
-// Endpoint to get client IP
+// Get client IP from external service
 app.get('/api/my-ip', async (req, res) => {
-  const ip = req.headers['cf-connecting-ip'] || req.ip || '';
-  res.json({ ip });
+  try {
+    const response = await fetch('https://api.ipify.org?format=json');
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.json({ ip: req.ip || 'unknown' });
+  }
 });
 
 // Scans history
