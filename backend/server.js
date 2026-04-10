@@ -435,7 +435,7 @@ function convertToWhatsAppUrl(url) {
   return url;
 }
 
-// SCAN redirect with client IP capture
+// SCAN redirect
 app.get('/s/:shortCode', async (req, res) => {
   const link = db.prepare('SELECT * FROM links WHERE short_code = ?').get(req.params.shortCode);
   if (!link) return res.status(404).send('Link not found');
@@ -445,20 +445,15 @@ app.get('/s/:shortCode', async (req, res) => {
     destination = convertToWhatsAppUrl(destination);
   }
 
-  const clientIP = req.headers['x-client-ip'];
-  const forwardedFor = req.headers['x-forwarded-for'];
-  
-  let ip = clientIP || forwardedFor?.split(',')[0]?.trim() || getRealIP(req);
-  if (ip.startsWith('::ffff:')) ip = ip.substring(7);
+  // Try all possible IP headers
+  const ip = req.headers['cf-connecting-ip'] 
+    || req.headers['x-client-ip'] 
+    || req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+    || req.headers['x-real-ip']
+    || req.ip
+    || '';
   
   const geo = await getGeoLocation(ip);
-
-  console.log('Headers:', JSON.stringify({
-    'x-client-ip': req.headers['x-client-ip'],
-    'x-forwarded-for': req.headers['x-forwarded-for'],
-    'x-real-ip': req.headers['x-real-ip']
-  }));
-  console.log('IP Final:', ip, '| Geo:', geo);
 
   const ua = parseUA(req.headers['user-agent'] || '');
 
