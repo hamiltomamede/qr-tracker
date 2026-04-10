@@ -8,32 +8,19 @@ const AuthContext = createContext(null);
 // Get client IP from external service
 async function getClientIP() {
   try {
-    const res = await axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
-    return res.data.ip;
+    const res = await fetch('https://api.ipify.org?format=json');
+    const data = await res.json();
+    return data.ip;
   } catch {
     return null;
   }
 }
-
-let clientIP = null;
-getClientIP().then(ip => { clientIP = ip; });
 
 function AuthProvider({ children }) {
   const savedToken = localStorage.getItem('qr_token');
   if (savedToken) {
     axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
   }
-
-  // Add client IP to all requests
-  axios.interceptors.request.use(async (config) => {
-    if (!clientIP) {
-      clientIP = await getClientIP();
-    }
-    if (clientIP) {
-      config.headers['X-Client-IP'] = clientIP;
-    }
-    return config;
-  });
 
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('qr_user');
@@ -49,6 +36,18 @@ function AuthProvider({ children }) {
       delete axios.defaults.headers.common['Authorization'];
     }
   }, [token]);
+
+  // Add client IP to all requests
+  useEffect(() => {
+    const interceptor = axios.interceptors.request.use(async (config) => {
+      const ip = await getClientIP();
+      if (ip) {
+        config.headers['X-Client-IP'] = ip;
+      }
+      return config;
+    });
+    return () => axios.interceptors.request.eject(interceptor);
+  }, []);
 
   useEffect(() => {
     const interceptor = axios.interceptors.response.use(
