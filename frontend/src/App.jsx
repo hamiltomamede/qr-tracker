@@ -5,11 +5,35 @@ import './index.css';
 const API = '/api';
 const AuthContext = createContext(null);
 
+// Get client IP from external service
+async function getClientIP() {
+  try {
+    const res = await axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
+    return res.data.ip;
+  } catch {
+    return null;
+  }
+}
+
+let clientIP = null;
+getClientIP().then(ip => { clientIP = ip; });
+
 function AuthProvider({ children }) {
   const savedToken = localStorage.getItem('qr_token');
   if (savedToken) {
     axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
   }
+
+  // Add client IP to all requests
+  axios.interceptors.request.use(async (config) => {
+    if (!clientIP) {
+      clientIP = await getClientIP();
+    }
+    if (clientIP) {
+      config.headers['X-Client-IP'] = clientIP;
+    }
+    return config;
+  });
 
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('qr_user');

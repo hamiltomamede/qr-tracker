@@ -435,7 +435,7 @@ function convertToWhatsAppUrl(url) {
   return url;
 }
 
-// SCAN redirect
+// SCAN redirect - IP passed from frontend
 app.get('/s/:shortCode', async (req, res) => {
   const link = db.prepare('SELECT * FROM links WHERE short_code = ?').get(req.params.shortCode);
   if (!link) return res.status(404).send('Link not found');
@@ -445,11 +445,8 @@ app.get('/s/:shortCode', async (req, res) => {
     destination = convertToWhatsAppUrl(destination);
   }
 
-  // Get IP - try header from frontend (set by ipify), then fallback to req.ip
-  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() 
-    || req.headers['x-real-ip']
-    || req.ip
-    || '';
+  // Get IP from header set by frontend
+  const ip = req.headers['x-client-ip'] || req.ip || '';
   
   const geo = await getGeoLocation(ip);
 
