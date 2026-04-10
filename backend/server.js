@@ -445,13 +445,8 @@ app.get('/s/:shortCode', async (req, res) => {
     destination = convertToWhatsAppUrl(destination);
   }
 
-  // Try all possible IP headers
-  const ip = req.headers['cf-connecting-ip'] 
-    || req.headers['x-client-ip'] 
-    || req.headers['x-forwarded-for']?.split(',')[0]?.trim()
-    || req.headers['x-real-ip']
-    || req.ip
-    || '';
+  // Get IP from header set by frontend
+  const ip = req.headers['x-client-ip'] || req.ip || '';
   
   const geo = await getGeoLocation(ip);
 
@@ -468,6 +463,12 @@ app.get('/s/:shortCode', async (req, res) => {
 
   db.prepare('UPDATE links SET scan_count = scan_count + 1 WHERE id = ?').run(link.id);
   res.redirect(302, destination);
+});
+
+// Endpoint to get client IP
+app.get('/api/my-ip', async (req, res) => {
+  const ip = req.headers['cf-connecting-ip'] || req.ip || '';
+  res.json({ ip });
 });
 
 // Scans history
